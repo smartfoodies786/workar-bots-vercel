@@ -13,7 +13,8 @@ function parseBody(req) {
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
-    res.status(200).type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    res.setHeader("Content-Type", "text/xml");
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
     return;
   }
   let body = parseBody(req);
@@ -27,7 +28,8 @@ module.exports = async (req, res) => {
   }
   const from = body.From ? String(body.From).replace("whatsapp:", "") : "";
   const text = body.Body ? String(body.Body) : "";
-  res.status(200).type("text/xml").send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  res.setHeader("Content-Type", "text/xml");
+  res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
   if (from) {
     try { await handleIncoming({ from, body: text }); } catch (e) { console.log("webhook error:", e.message); }
   }
