@@ -2,12 +2,41 @@
 // Parses Twilio POST urlencoded body (From, Body), calls lib/handler.js
 // handleIncoming, responds 200 fast with empty TwiML.
 // Works without Express listen.
+//
+// FIXES 2026-11-12:
+// 1. res.type() is Express-only — Vercel serverless has no .type(), so every
+//    call crashed with 500 FUNCTION_INVOCATION_FAILED (local Express server.js
+//    masked it). Use setHeader instead.
+// 2. Vercel does not reliably populate req.body for Twilio's urlencoded POSTs
+//    here: Twilio POSTs arrived (200) but From was empty, so handleIncoming
+//    was skipped and the bot never replied, with zero logs and zero outgoing
+//    requests. So: read the raw stream when req.body has no From/Body, and
+//    log what was received so the next test is decisive.
 const querystring = require("querystring");
 const { handleIncoming } = require("../lib/handler");
 
-function parseBody(req) {
-  if (req.body && typeof req.body === "object") return req.body;
-  if (typeof req.body === "string" && req.body) return querystring.parse(req.body);
+async function readBody(req) {
+  if (req.body && typeof req.body === "object" && (req.body.From || req.body.Body)) {
+    return req.body;
+  }
+  if (typeof req.body === "string" && req.body) {
+    const parsed = querystring.parse(req.body);
+    if (parsed.From || parsed.Body) return parsed;
+  }
+  try {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const raw = Buffer.concat(chunks).toString("utf8");
+    if (raw) {
+      try {
+        const asJson = JSON.parse(raw);
+        if (asJson && (asJson.From || asJson.Body)) return asJson;
+      } catch (e) { /* not JSON, fall through to urlencoded */ }
+      return querystring.parse(raw);
+    }
+  } catch (e) {
+    console.log("webhook readBody error:", e.message);
+  }
   return {};
 }
 
@@ -17,20 +46,15 @@ module.exports = async (req, res) => {
     res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
     return;
   }
-  let body = parseBody(req);
-  if (!body.From && !body.Body && req.readable) {
-    try {
-      const chunks = [];
-      for await (const chunk of req) chunks.push(chunk);
-      const raw = Buffer.concat(chunks).toString("utf8");
-      if (raw) body = querystring.parse(raw);
-    } catch (e) { /* keep parsed body */ }
-  }
+  const body = await readBody(req);
   const from = body.From ? String(body.From).replace("whatsapp:", "") : "";
   const text = body.Body ? String(body.Body) : "";
+  console.log("webhook received:", JSON.stringify({ from, text: text.slice(0, 80) }));
   res.setHeader("Content-Type", "text/xml");
   res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
   if (from) {
     try { await handleIncoming({ from, body: text }); } catch (e) { console.log("webhook error:", e.message); }
+  } else {
+    console.log("webhook: no From in body, skipping handleIncoming");
   }
 };
