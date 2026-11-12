@@ -82,7 +82,12 @@ async function set(table, key, value) {
       const col = keyColumn(table);
       const row = { ...value };
       if (col === "phone") row.phone = key;
-      if (col === "id") row.id = key;
+      // Only bookings has a TEXT id (e.g. GT1001). Messages.id is UUID with a
+      // gen_random_uuid() default — the code's "timestamp-phone" key is not a
+      // valid UUID, so the upsert failed every time ("invalid input syntax
+      // for type uuid") and messages were kept in-memory only. Omit row.id
+      // for messages and let the DB generate the UUID.
+      if (col === "id" && table === "bookings") row.id = key;
       const { error } = await supabase.from(table).upsert(row, { onConflict: col });
       if (error) throw error;
     } catch (err) {
