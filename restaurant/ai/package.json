@@ -1,0 +1,23 @@
+{
+  "dependencies": {
+    "@supabase/supabase-js": "^2.44.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "node-cron": "^3.0.3",
+    "twilio": "^4.19.0",
+    "xlsx": "^0.18.5"
+  },
+  "description": "Restaurant WhatsApp Bot \u2014 AI variant (Vercel-ready). Keyword bot + optional Groq/Gemini free-text AI via built-in fetch, no extra AI SDK. Mario's Italian Kitchen demo.",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "server.js",
+  "name": "restaurant-whatsapp-bot-ai",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "version": "2.0.0"
+}

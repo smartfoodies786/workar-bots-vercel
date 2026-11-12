@@ -1,0 +1,33 @@
+This file shows the format for menu updates.
+Create a file called menu.xlsx with these columns:
+
+Column A = Action
+Column B = Name
+Column C = Price
+Column D = Category
+
+Examples:
+
+Action    | Name              | Price  | Category
+----------|-------------------|--------|----------
+add       | Grilled Salmon    | 18.99  | mains
+add       | Garlic Mushrooms  | 7.99   | starters
+remove    | Pizza             |        |
+price     | Classic Burger    | 16.99  |
+hours     | Mon-Sun 12pm-11pm |        |
+special   | Lamb Chops        | 19.99  | Fresh New Zealand lamb
+
+Actions available:
+- add      = add new dish (needs name, price, category)
+- remove   = remove dish from menu (needs name only)
+- price    = update price of existing dish (needs name and new price)
+- hours    = update opening hours (put new hours in Name column)
+- special  = update today's special (name=dish, price=price, category=description)
+
+Categories: starters / mains / desserts / drinks
+
+Instructions:
+1. Create this as an Excel file (menu.xlsx)
+2. Fill in your changes
+3. Send the file to the bot on WhatsApp
+4. Bot reads it and updates everything automatically!

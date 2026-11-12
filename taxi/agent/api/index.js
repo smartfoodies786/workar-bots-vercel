@@ -1,0 +1,7 @@
+// api/index.js — Vercel health endpoint.
+// Returns JSON {status, bot, variant, taxi, bookings, uptime}.
+const { getHealth } = require("../lib/handler");
+
+module.exports = async (req, res) => {
+  res.status(200).json(getHealth());
+};
