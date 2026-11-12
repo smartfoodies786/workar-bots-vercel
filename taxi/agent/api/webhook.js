@@ -12,6 +12,12 @@
 //    was skipped and the bot never replied, with zero logs and zero outgoing
 //    requests. So: read the raw stream when req.body has no From/Body, and
 //    log what was received so the next test is decisive.
+// 3. Vercel freezes the function once the response is sent, so work done
+//    AFTER res.send() is not guaranteed to run: Twilio POSTs returned 200 in
+//    64ms with zero outgoing requests and zero logs — the Groq call + Twilio
+//    reply never ran. So: await handleIncoming() BEFORE sending the 200.
+//    (No TwiML reply is needed — handleIncoming sends the reply via Twilio
+//    REST in lib/handler.js sendMsg.)
 const querystring = require("querystring");
 const { handleIncoming } = require("../lib/handler");
 
@@ -50,11 +56,13 @@ module.exports = async (req, res) => {
   const from = body.From ? String(body.From).replace("whatsapp:", "") : "";
   const text = body.Body ? String(body.Body) : "";
   console.log("webhook received:", JSON.stringify({ from, text: text.slice(0, 80) }));
-  res.setHeader("Content-Type", "text/xml");
-  res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
   if (from) {
     try { await handleIncoming({ from, body: text }); } catch (e) { console.log("webhook error:", e.message); }
   } else {
     console.log("webhook: no From in body, skipping handleIncoming");
   }
+  // Respond only AFTER the work is done — Vercel can freeze the function
+  // once the response is sent, which silently killed the reply before.
+  res.setHeader("Content-Type", "text/xml");
+  res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 };
