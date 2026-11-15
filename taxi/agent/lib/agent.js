@@ -213,8 +213,11 @@ async function routeLocally(from, raw) {
       delete pending[from];
       return `❌ Booking dropped.\n\nType *book* to start again, or *fares* to see fixed fares.`;
     }
-    if (low === "yes" || low === "confirm" || low === "y" || low.startsWith("yes ") || low.startsWith("confirm ")) {
-      const name = low.startsWith("yes ") ? msg.slice(4).trim() : low.startsWith("confirm ") ? msg.slice(8).trim() : "";
+    if (low === "yes" || low === "confirm" || low === "y" || low === "yes confirmed" || low === "yes confirm" || low.startsWith("yes ") || low.startsWith("confirm ")) {
+      // "Yes confirmed" is a bare confirmation, not a name — never store
+      // "confirmed" as the customer name.
+      const bareYes = low === "yes" || low === "y" || low === "confirm" || low === "yes confirmed" || low === "yes confirm";
+      const name = bareYes ? "" : low.startsWith("yes ") ? msg.slice(4).trim() : low.startsWith("confirm ") ? msg.slice(8).trim() : "";
       if (p.stage === "awaiting-confirm") return await finishBooking(from, name);
       return nextStep(from); // YES too early — keep collecting instead
     }
@@ -246,14 +249,27 @@ async function routeLocally(from, raw) {
       mine.map((b) => `• #${b.id} — ${b.direction === "to-gatwick" ? `${b.destination} → Gatwick Airport` : `Gatwick Airport → ${b.destination}`} — ${b.datetime} — £${b.fare} (${b.status})`).join("\n");
   }
 
-  // 3. Pickup / meeting point.
-  if (/pick ?up|meet(ing)? point|where (do|will) (i|we|the driver)|which terminal|terminal/.test(low) && !/book/.test(low)) {
-    const term = matchTerminal(msg);
-    const r = await executeTool("getPickupInfo", { terminal: term || undefined }, { from });
-    return r.text;
+  // 2b. Bare YES / confirm with no pending draft. A customer answering a
+  // quote from an earlier session hits this when the pending draft is gone
+  // (serverless instances restart and lose in-memory state — seen live
+  // 15 Nov 2026, when "Yes confirmed" fell through to the welcome menu).
+  // Confirm their latest Pending booking, or show the status if it is
+  // already confirmed.
+  if (/^(yes|y|confirm|confirmed|yes confirmed|yes confirm|ok|okay)$/.test(low)) {
+    const mine = await listBookingsForPhone(from);
+    const latest = mine[mine.length - 1];
+    if (latest) {
+      if (latest.status === "Pending") {
+        const r = await executeTool("confirmBooking", { bookingId: latest.id }, { from });
+        return r.text;
+      }
+      const r = await executeTool("getBooking", { bookingId: latest.id }, { from });
+      return r.text;
+    }
+    return null; // no booking to confirm — fall through to menu
   }
 
-  // 4. Destination list.
+  // 3. Destination list.
   if (/destinations|where (do|can) (you|we) go|where can i go|places you (go|serve)|list.*(place|destination)/.test(low)) {
     const r = await executeTool("listDestinations", {}, { from });
     return r.text;
@@ -283,6 +299,12 @@ async function routeLocally(from, raw) {
   const mentionsGatwickRoute = /\bgatwick\s+to\b/i.test(low) || /\bto\s+gatwick\b/i.test(low);
   if (bits.destination && (hasBookingWords || mentionsGatwickRoute)) {
     pending[from] = { draft: bits, stage: "collecting" };
+    // One-shot booking: every field already given (incl. terminal) — skip
+    // the flight-number question and go straight to the final quote, so a
+    // complete booking fits in 3 WhatsApp messages (quote, YES, confirm).
+    if (bits.destination && bits.datetime && bits.passengers && bits.vehicle && bits.terminal) {
+      pending[from].draft.flightNumber = "not given";
+    }
     return nextStep(from);
   }
   if (!bits.destination && (hasBookingWords || mentionsGatwickRoute)) {
@@ -292,6 +314,16 @@ async function routeLocally(from, raw) {
       const r = await executeTool("quoteFare", { destination: unknown }, { from });
       return r.text;
     }
+  }
+
+  // Pickup / meeting point. Checked AFTER booking intent: a booking message
+  // that names a terminal ("... North Terminal to Brighton ...") is a
+  // booking, not a pickup question — the old order hijacked it and
+  // answered with pickup info instead of a quote (seen live 15 Nov 2026).
+  if (/pick ?up|meet(ing)? point|where (do|will) (i|we|the driver)|which terminal|terminal/.test(low) && !/book/.test(low)) {
+    const term = matchTerminal(msg);
+    const r = await executeTool("getPickupInfo", { terminal: term || undefined }, { from });
+    return r.text;
   }
   return null;
 }
@@ -310,6 +342,7 @@ function systemPrompt() {
     `Pickup: Gatwick North Terminal (Car Park 6, Level 4) or South Terminal (Car Park 3, Ground Floor). Fare includes meet & greet, flight tracking, free child seats and the £10 Gatwick terminal charge. No payment when booking. The driver waits if a flight is delayed at no extra cost.\n` +
     `Rules: NEVER invent a fare, journey time, address, or phone number. A destination not in the fare list is exactly: quote on request, owner will confirm. Airport journeys only — no local town runs, no school runs, no courier.\n` +
     `Booking needs: direction, destination, terminal, flight number, date/time, passengers (1-8), vehicle (Saloon, Estate, MPV, 8-seater, Executive). Ask for missing fields ONE question at a time. Never guess a missing field — ask.\n` +
+    `If the customer's message already contains destination, date/time, passengers, vehicle AND terminal, do NOT ask for anything else: quote the fare and ask for YES confirmation. Only call getPickupInfo when the customer asks where to meet the driver — never for a booking message that merely names a terminal.\n` +
     `If the question cannot be answered from the information above, reply exactly: UNSURE.\n` +
     `Keep replies short and friendly. You may answer in Urdu / Roman Urdu if the customer writes in Urdu / Roman Urdu.`
   );
